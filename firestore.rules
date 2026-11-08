@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// My Daily — only ONE Google account (the owner) can read or write anything.
+// 1) Sign in to the app once, copy the UID shown on the "ฉัน" page.
+// 2) Replace PASTE_OWNER_UID_HERE below with that UID, then Publish.
+// Until then, every request is denied (safe by default).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner() {
+      return request.auth != null && request.auth.uid == 'PASTE_OWNER_UID_HERE';
+    }
+    function ownsNewData() {
+      return request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    // diary entries (text + photo list). Deleted entries are kept as small "deleted: true" markers
+    match /posts/{postId} {
+      allow read: if isOwner();
+      allow create, update: if isOwner() && ownsNewData()
+        && request.resource.data.id == postId
+        && request.resource.data.deleted is bool
+        && request.resource.data.updatedAt is string;
+      allow delete: if isOwner();
+    }
+
+    // compressed photos (one document per photo, < 1 MB)
+    match /photos/{photoId} {
+      allow read: if isOwner();
+      allow create, update: if isOwner() && ownsNewData()
+        && request.resource.data.data is bytes
+        && request.resource.data.data.size() <= 950000;
+      allow delete: if isOwner();
+    }
+
+    // everything else is closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
